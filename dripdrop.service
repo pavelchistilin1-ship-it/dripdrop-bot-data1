@@ -1,0 +1,15 @@
+[Unit]
+Description=DripDropPay Telegram Bot
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/dripdrop_bot
+ExecStart=/usr/bin/python3.11 /home/ubuntu/dripdrop_bot/bot.py
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/ubuntu/dripdrop_bot/bot.log
+StandardError=append:/home/ubuntu/dripdrop_bot/bot.log
+
+[Install]
+WantedBy=multi-user.target
