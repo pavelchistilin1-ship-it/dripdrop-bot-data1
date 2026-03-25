@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 DB_NAME = "dripdrop.db"
 ADMIN_USERNAME = "Emagjii"
 SUPPORT_BOT_URL = "https://t.me/DripDropSupport_bot"
-WELCOME_PHOTO_URL = "https://i.ibb.co/KjP8jq0x/image.jpg" # Прямая ссылка на фото
+WELCOME_PHOTO_URL = "https://i.postimg.cc/Dwyx5HHG/IMG-4225.jpg" # Прямая ссылка на фото высокого разрешения
 
 # Состояния для ConversationHandler
 ADD_REQUISITE = 1
