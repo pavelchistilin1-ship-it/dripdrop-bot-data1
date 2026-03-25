@@ -16,20 +16,19 @@ logger = logging.getLogger(__name__)
 DB_NAME = "dripdrop.db"
 ADMIN_USERNAME = "Emagjii"
 SUPPORT_BOT_URL = "https://t.me/DripDropSupport_bot"
-WELCOME_PHOTO_URL = "https://i.postimg.cc/Dwyx5HHG/IMG-4225.jpg" # Прямая ссылка на фото высокого разрешения
+WELCOME_PHOTO_URL = "https://i.postimg.cc/Dwyx5HHG/IMG-4225.jpg"
 
 # Состояния для ConversationHandler
 ADD_REQUISITE = 1
 REPLENISH_AMOUNT = 2
-TRAFFIC_REQUISITE = 3
 TRAFFIC_INTERVAL = 4
 MOD_SEARCH_USER = 5
 MOD_REPLENISH_TYPE = 6
 MOD_REPLENISH_AMOUNT = 7
-MOD_PAYMENT_USER = 8
 MOD_PAYMENT_DATA = 9
 APPROVE_PAYMENT_NUMBER = 10
 PROMOTE_MODERATOR = 11
+MOD_REPLY_USER = 12 # Новое состояние для ответа пользователю
 
 # Инициализация базы данных
 def init_db():
@@ -42,9 +41,16 @@ def init_db():
             role TEXT DEFAULT 'trader',
             insurance_balance REAL DEFAULT 0,
             working_balance REAL DEFAULT 0,
-            turnover REAL DEFAULT 0
+            turnover REAL DEFAULT 0,
+            earned REAL DEFAULT 0
         )
     ''')
+    # Проверка наличия колонки earned (для существующих БД)
+    cursor.execute("PRAGMA table_info(users)")
+    columns = [column[1] for column in cursor.fetchall()]
+    if 'earned' not in columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN earned REAL DEFAULT 0")
+        
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS requisites (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,16 +119,13 @@ def calculate_commission(amount):
 # Клавиатуры
 def get_main_keyboard(role):
     if role in ['moderator', 'super_moderator']:
-        # Чистая панель модератора без кнопок трейдера
         keyboard = [
             [KeyboardButton("📤 Платежи"), KeyboardButton("👥 Пользователи")]
         ]
         if role == 'super_moderator':
             keyboard.append([KeyboardButton("🛡️ Назначить модератора")])
-        # Добавляем кнопку переключения в режим трейдера для удобства (опционально)
         keyboard.append([KeyboardButton("🔄 Режим Трейдера")])
     else:
-        # Панель трейдера
         keyboard = [
             [KeyboardButton("💎 Баланс"), KeyboardButton("🏦 Реквизиты")],
             [KeyboardButton("🧊 Пополнить"), KeyboardButton("🚦 Трафик")],
@@ -138,7 +141,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     create_user(user_id, username)
     user = get_user(user_id)
     
-    # Проверка на супер-модератора
     if username == ADMIN_USERNAME and user[2] != 'super_moderator':
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
@@ -150,7 +152,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     role_map = {'trader': 'Трейдер', 'moderator': 'Модератор', 'super_moderator': 'Супер-модератор'}
     role_name = role_map.get(user[2], 'Трейдер')
     
-    # Центрированный заголовок с использованием невидимых символов
     welcome_text = (
         f"⠀ ⠀ ⠀ ⠀ 🌊 **DripDropPay** 🌊\n"
         f"       ━━━━━━━━━━━━\n"
@@ -180,7 +181,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not user: return
 
-    # Переключение режимов для модераторов
     if text == "🔄 Режим Трейдера" and user[2] in ['moderator', 'super_moderator']:
         keyboard = [
             [KeyboardButton("💎 Баланс"), KeyboardButton("🏦 Реквизиты")],
@@ -196,12 +196,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if text in ["💎 Баланс", "💰 Баланс"]:
+        # user[6] - это поле earned
+        earned_val = user[6] if len(user) > 6 else 0
         await update.message.reply_text(
             f"🧊 **Ваши счета**\n"
             f"━━━━━━━━━━━━\n"
             f"🔹 Страховой: `{user[3]:.2f} ₽`\n"
             f"🔸 Рабочий: `{user[4]:.2f} ₽`\n"
             f"📈 Оборот: `{user[5]:.2f} ₽`\n"
+            f"💸 Заработано: `{earned_val:.2f} ₽`\n"
             f"━━━━━━━━━━━━\n"
             f"🌐 *Статус: Активен*",
             parse_mode='Markdown'
@@ -283,7 +286,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown'
         )
 
-    # Функции модератора
     elif text == "📤 Платежи" and user[2] in ['moderator', 'super_moderator']:
         await update.message.reply_text("🔍 Введите Username или ID трейдера для отправки платежа:")
         context.user_data['mod_action'] = 'payment'
@@ -346,13 +348,11 @@ async def del_req_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text("✅ Реквизит удален.")
     return ConversationHandler.END
 
-# Обработка пополнения
 async def repl_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     method = "CryptoBot" if "crypto" in query.data else "TRC20"
     context.user_data['repl_method'] = method
-    # Замена ₽ на $ только здесь
     await query.edit_message_text(f"🧊 Введите сумму пополнения в **$** ({method}):", parse_mode='Markdown')
     return REPLENISH_AMOUNT
 
@@ -378,6 +378,27 @@ async def repl_finish(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except: pass
         
     await update.message.reply_text("✅ Заявка отправлена модераторам. Ожидайте подтверждения.")
+    return ConversationHandler.END
+
+# Обработка ответов модератора
+async def mod_reply_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    target_id = query.data.split("_")[2]
+    context.user_data['reply_target_id'] = target_id
+    await query.message.reply_text(f"💬 Введите сообщение для пользователя #{target_id}:")
+    return MOD_REPLY_USER
+
+async def mod_reply_finish(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    target_id = context.user_data.get('reply_target_id')
+    
+    try:
+        await context.bot.send_message(target_id, f"✉️ **Сообщение от модератора:**\n\n> {text}", parse_mode='Markdown')
+        await update.message.reply_text("✅ Сообщение отправлено пользователю.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка при отправке: {e}")
+        
     return ConversationHandler.END
 
 # Обработка трафика
@@ -431,6 +452,7 @@ async def mod_search_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['target_id'] = target[0]
     
     if context.user_data.get('mod_action') == 'profile':
+        earned_val = target[6] if len(target) > 6 else 0
         msg = (
             f"👤 **Профиль пользователя**\n"
             f"━━━━━━━━━━━━\n"
@@ -439,7 +461,8 @@ async def mod_search_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🎖 Роль: `{target[2]}`\n"
             f"🔹 Страховой: `{target[3]:.2f} ₽`\n"
             f"🔸 Рабочий: `{target[4]:.2f} ₽`\n"
-            f"📈 Оборот: `{target[5]:.2f} ₽`"
+            f"📈 Оборот: `{target[5]:.2f} ₽`\n"
+            f"💸 Заработано: `{earned_val:.2f} ₽`"
         )
         keyboard = [
             [InlineKeyboardButton("➕ Пополнить баланс", callback_data="mod_repl")],
@@ -466,7 +489,7 @@ async def mod_repl_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     context.user_data['mod_bal_type'] = 'insurance' if 'ins' in query.data else 'working'
     await query.edit_message_text("💰 Введите сумму:")
-    return MOD_REPLENISH_AMOUNT # Reuse state for text input
+    return MOD_REPLENISH_AMOUNT
 
 async def mod_repl_finish(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -548,9 +571,9 @@ async def approve_pay_finish(update: Update, context: ContextTypes.DEFAULT_TYPE)
     comm_rate = calculate_commission(amount)
     profit = amount * comm_rate
     
-    # Обновляем балансы
-    cursor.execute("UPDATE users SET working_balance = working_balance - ?, turnover = turnover + ? WHERE user_id = ?", 
-                   (amount, amount, user_id))
+    # Обновляем балансы: списываем сумму, начисляем процент, обновляем оборот и заработано
+    cursor.execute("UPDATE users SET working_balance = working_balance - ?, turnover = turnover + ?, earned = earned + ? WHERE user_id = ?", 
+                   (amount, amount, profit, user_id))
     cursor.execute("UPDATE users SET working_balance = working_balance + ? WHERE user_id = ?", (profit, user_id))
     cursor.execute("UPDATE payments SET status = 'approved' WHERE id = ?", (pay_id,))
     conn.commit()
@@ -590,7 +613,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Главная функция
 def main():
     init_db()
-    # Используем токен из переменной окружения или вставляем напрямую
     TOKEN = "8619908903:AAE5Ds0ts3rhViOw0AIzwGLEOGSzfEja0_k"
     application = Application.builder().token(TOKEN).build()
 
@@ -599,6 +621,7 @@ def main():
         entry_points=[
             CallbackQueryHandler(add_req_start, pattern="^add_req$"),
             CallbackQueryHandler(repl_start, pattern="^repl_"),
+            CallbackQueryHandler(mod_reply_start, pattern="^reply_user_"),
             CallbackQueryHandler(traf_req_select, pattern="^traf_req_"),
             CallbackQueryHandler(approve_pay_start, pattern="^appr_pay_"),
             MessageHandler(filters.Regex("^(📤 Платежи|👥 Пользователи)$"), handle_message),
@@ -607,6 +630,7 @@ def main():
         states={
             ADD_REQUISITE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_req_save)],
             REPLENISH_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, repl_finish)],
+            MOD_REPLY_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, mod_reply_finish)],
             TRAFFIC_INTERVAL: [CallbackQueryHandler(traf_req_finish, pattern="^int_")],
             MOD_SEARCH_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, mod_search_user)],
             MOD_REPLENISH_TYPE: [CallbackQueryHandler(mod_repl_type, pattern="^mod_")],
