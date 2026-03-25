@@ -112,15 +112,22 @@ def calculate_commission(amount):
 
 # Клавиатуры
 def get_main_keyboard(role):
-    keyboard = [
-        [KeyboardButton("💰 Баланс"), KeyboardButton("🏦 Реквизиты")],
-        [KeyboardButton("💳 Пополнить"), KeyboardButton("🚦 Запросить трафик")],
-        [KeyboardButton("📋 Платежи"), KeyboardButton("🆘 Поддержка")]
-    ]
     if role in ['moderator', 'super_moderator']:
-        keyboard.append([KeyboardButton("📤 Платежи"), KeyboardButton("👥 Пользователи")])
-    if role == 'super_moderator':
-        keyboard.append([KeyboardButton("🛡️ Назначить модератора")])
+        # Чистая панель модератора без кнопок трейдера
+        keyboard = [
+            [KeyboardButton("📤 Платежи"), KeyboardButton("👥 Пользователи")]
+        ]
+        if role == 'super_moderator':
+            keyboard.append([KeyboardButton("🛡️ Назначить модератора")])
+        # Добавляем кнопку переключения в режим трейдера для удобства (опционально)
+        keyboard.append([KeyboardButton("🔄 Режим Трейдера")])
+    else:
+        # Панель трейдера
+        keyboard = [
+            [KeyboardButton("💎 Баланс"), KeyboardButton("🏦 Реквизиты")],
+            [KeyboardButton("🧊 Пополнить"), KeyboardButton("🚦 Трафик")],
+            [KeyboardButton("📋 Платежи"), KeyboardButton("🆘 Поддержка")]
+        ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 # Обработчики команд
@@ -143,11 +150,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     role_map = {'trader': 'Трейдер', 'moderator': 'Модератор', 'super_moderator': 'Супер-модератор'}
     role_name = role_map.get(user[2], 'Трейдер')
     
+    # Центрированный заголовок с использованием невидимых символов
     welcome_text = (
-        f"🌊 **DripDropPay**\n"
-        f"━━━━━━━━━━━━\n"
-        f"👤 Вы вошли как {role_name} #{user_id}\n\n"
-        f"Используйте меню ниже для работы."
+        f"⠀ ⠀ ⠀ ⠀ 🌊 **DripDropPay** 🌊\n"
+        f"       ━━━━━━━━━━━━\n"
+        f"👤 Вы вошли как **{role_name} #{user_id}**\n\n"
+        f"> Используйте меню ниже для работы."
     )
     
     try:
@@ -172,13 +180,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not user: return
 
-    if text == "💰 Баланс":
+    # Переключение режимов для модераторов
+    if text == "🔄 Режим Трейдера" and user[2] in ['moderator', 'super_moderator']:
+        keyboard = [
+            [KeyboardButton("💎 Баланс"), KeyboardButton("🏦 Реквизиты")],
+            [KeyboardButton("🧊 Пополнить"), KeyboardButton("🚦 Трафик")],
+            [KeyboardButton("📋 Платежи"), KeyboardButton("🆘 Поддержка")],
+            [KeyboardButton("🔄 Режим Модератора")]
+        ]
+        await update.message.reply_text("🔄 Переключено в режим Трейдера.", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
+        return
+
+    if text == "🔄 Режим Модератора" and user[2] in ['moderator', 'super_moderator']:
+        await update.message.reply_text("🔄 Переключено в режим Модератора.", reply_markup=get_main_keyboard(user[2]))
+        return
+
+    if text in ["💎 Баланс", "💰 Баланс"]:
         await update.message.reply_text(
-            f"💳 **Ваши счета**\n"
+            f"🧊 **Ваши счета**\n"
             f"━━━━━━━━━━━━\n"
             f"🔹 Страховой: `{user[3]:.2f} ₽`\n"
             f"🔸 Рабочий: `{user[4]:.2f} ₽`\n"
-            f"📈 Оборот: `{user[5]:.2f} ₽`",
+            f"📈 Оборот: `{user[5]:.2f} ₽`\n"
+            f"━━━━━━━━━━━━\n"
+            f"🌐 *Статус: Активен*",
             parse_mode='Markdown'
         )
 
@@ -190,27 +215,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         
         if not reqs:
-            msg = "У вас пока нет реквизитов."
+            msg = "❕ У вас пока нет реквизитов."
         else:
             msg = "📋 **Ваши реквизиты**\n━━━━━━━━━━━━\n"
             for r in reqs:
-                msg += f"• `{r[1]}`\n"
+                msg += f"💧 `{r[1]}`\n"
         
         await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("➕ Добавить", callback_data="add_req"),
              InlineKeyboardButton("🗑️ Удалить", callback_data="del_req")]
         ]), parse_mode='Markdown')
 
-    elif text == "💳 Пополнить":
+    elif text in ["🧊 Пополнить", "💳 Пополнить"]:
         keyboard = [
             [InlineKeyboardButton("🤖 CryptoBot", callback_data="repl_crypto")],
             [InlineKeyboardButton("🌐 TRC20", callback_data="repl_trc20")]
         ]
-        await update.message.reply_text("Выберите способ пополнения:", reply_markup=InlineKeyboardMarkup(keyboard))
+        await update.message.reply_text("💎 Выберите способ пополнения:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-    elif text == "🚦 Запросить трафик":
+    elif text in ["🚦 Трафик", "🚦 Запросить трафик"]:
         if user[3] < 5000:
-            await update.message.reply_text("❌ Ошибка: Страховой баланс должен быть не менее 5000 ₽.")
+            await update.message.reply_text("❌ **Ошибка:** Страховой баланс должен быть не менее 5000 ₽.")
             return
         
         conn = sqlite3.connect(DB_NAME)
@@ -223,8 +248,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Сначала добавьте реквизиты.")
             return
             
-        keyboard = [[InlineKeyboardButton(r[0], callback_data=f"traf_req_{r[0][:20]}")] for r in reqs]
-        await update.message.reply_text("Выберите реквизит для трафика:", reply_markup=InlineKeyboardMarkup(keyboard))
+        keyboard = [[InlineKeyboardButton(f"💧 {r[0]}", callback_data=f"traf_req_{r[0][:20]}")] for r in reqs]
+        await update.message.reply_text("🚦 Выберите реквизит для трафика:", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif text == "📋 Платежи":
         conn = sqlite3.connect(DB_NAME)
@@ -234,42 +259,50 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         
         if not pays:
-            await update.message.reply_text("У вас нет активных платежей.")
+            await update.message.reply_text("❕ У вас нет активных платежей.")
         else:
             for p in pays:
-                msg = f"📦 **Платёж #{p[0]}**\n━━━━━━━━━━━━\n💰 Сумма: `{p[2]:.2f} ₽`\n🏦 Данные: `{p[1]}`"
+                msg = (
+                    f"📦 **Платёж #{p[0]}**\n"
+                    f"━━━━━━━━━━━━\n"
+                    f"💰 Сумма: `{p[2]:.2f} ₽`\n"
+                    f"🏦 Данные: `{p[1]}`\n"
+                    f"━━━━━━━━━━━━\n"
+                    f"> Ожидает подтверждения"
+                )
                 await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("✅ Одобрить", callback_data=f"appr_pay_{p[0]}")]
                 ]), parse_mode='Markdown')
 
     elif text == "🆘 Поддержка":
         await update.message.reply_text(
-            "🆘 **Служба поддержки**\n\nЕсли у вас возникли вопросы, обратитесь к нашему боту поддержки.",
+            "🆘 **Служба поддержки**\n\n> Если у вас возникли вопросы, обратитесь к нашему боту поддержки.",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔴 СВЯЗАТЬСЯ С ПОДДЕРЖКОЙ", url=SUPPORT_BOT_URL)]
-            ])
+            ]),
+            parse_mode='Markdown'
         )
 
     # Функции модератора
     elif text == "📤 Платежи" and user[2] in ['moderator', 'super_moderator']:
-        await update.message.reply_text("Введите Username или ID трейдера для отправки платежа:")
+        await update.message.reply_text("🔍 Введите Username или ID трейдера для отправки платежа:")
         context.user_data['mod_action'] = 'payment'
         return MOD_SEARCH_USER
 
     elif text == "👥 Пользователи" and user[2] in ['moderator', 'super_moderator']:
-        await update.message.reply_text("Введите Username или ID пользователя:")
+        await update.message.reply_text("🔍 Введите Username или ID пользователя:")
         context.user_data['mod_action'] = 'profile'
         return MOD_SEARCH_USER
 
     elif text == "🛡️ Назначить модератора" and user[2] == 'super_moderator':
-        await update.message.reply_text("Введите Username или ID будущего модератора:")
+        await update.message.reply_text("🛡️ Введите Username или ID будущего модератора:")
         return PROMOTE_MODERATOR
 
 # Conversation Handlers
 async def add_req_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("Введите реквизиты в формате: `номер-банк` (например: `+79516768798-Альфа`)", parse_mode='Markdown')
+    await query.edit_message_text("💧 Введите реквизиты в формате: `номер-банк` (например: `+79516768798-Альфа`)", parse_mode='Markdown')
     return ADD_REQUISITE
 
 async def add_req_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -297,7 +330,7 @@ async def del_req_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("У вас нет реквизитов для удаления.")
         return ConversationHandler.END
         
-    keyboard = [[InlineKeyboardButton(r[1], callback_data=f"del_id_{r[0]}")] for r in reqs]
+    keyboard = [[InlineKeyboardButton(f"🗑️ {r[1]}", callback_data=f"del_id_{r[0]}")] for r in reqs]
     await query.edit_message_text("Выберите реквизит для удаления:", reply_markup=InlineKeyboardMarkup(keyboard))
     return ConversationHandler.END
 
@@ -319,7 +352,8 @@ async def repl_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     method = "CryptoBot" if "crypto" in query.data else "TRC20"
     context.user_data['repl_method'] = method
-    await query.edit_message_text(f"Введите сумму пополнения в ₽ ({method}):")
+    # Замена ₽ на $ только здесь
+    await query.edit_message_text(f"🧊 Введите сумму пополнения в **$** ({method}):", parse_mode='Markdown')
     return REPLENISH_AMOUNT
 
 async def repl_finish(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -335,7 +369,7 @@ async def repl_finish(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"💰 **Заявка на пополнение**\n"
                 f"━━━━━━━━━━━━\n"
                 f"👤 Пользователь: @{username} (#{user_id})\n"
-                f"💵 Сумма: `{amount} ₽`\n"
+                f"💵 Сумма: `{amount} $`\n"
                 f"💳 Метод: `{method}`"
             )
             await context.bot.send_message(mod_id, msg, reply_markup=InlineKeyboardMarkup([
@@ -355,7 +389,7 @@ async def traf_req_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("15 мин", callback_data="int_15"), InlineKeyboardButton("30 мин", callback_data="int_30")],
         [InlineKeyboardButton("1 час", callback_data="int_60"), InlineKeyboardButton("2 часа", callback_data="int_120")]
     ]
-    await query.edit_message_text("Выберите интервал трафика:", reply_markup=InlineKeyboardMarkup(keyboard))
+    await query.edit_message_text("⏱ Выберите интервал трафика:", reply_markup=InlineKeyboardMarkup(keyboard))
     return TRAFFIC_INTERVAL
 
 async def traf_req_finish(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -414,7 +448,7 @@ async def mod_search_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
         return MOD_REPLENISH_TYPE
     else:
-        await update.message.reply_text("Введите данные платежа в формате: `номер реквизит сумма` (через пробел)")
+        await update.message.reply_text("📦 Введите данные платежа в формате: `номер реквизит сумма` (через пробел)")
         return MOD_PAYMENT_DATA
 
 async def mod_repl_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -424,21 +458,21 @@ async def mod_repl_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("Страховой", callback_data="bal_ins"), InlineKeyboardButton("Рабочий", callback_data="bal_work")]
     ]
-    await query.edit_message_text("Выберите тип баланса:", reply_markup=InlineKeyboardMarkup(keyboard))
+    await query.edit_message_text("💎 Выберите тип баланса:", reply_markup=InlineKeyboardMarkup(keyboard))
     return MOD_REPLENISH_AMOUNT
 
 async def mod_repl_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     context.user_data['mod_bal_type'] = 'insurance' if 'ins' in query.data else 'working'
-    await query.edit_message_text("Введите сумму:")
+    await query.edit_message_text("💰 Введите сумму:")
     return MOD_REPLENISH_AMOUNT # Reuse state for text input
 
 async def mod_repl_finish(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         amount = float(update.message.text)
     except:
-        await update.message.reply_text("❌ Ошибка: Введите число.")
+        await update.message.reply_text("❌ **Ошибка:** Введите число.")
         return ConversationHandler.END
         
     target_id = context.user_data['target_id']
@@ -466,7 +500,7 @@ async def mod_payment_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
         amount = float(data[-1])
         pay_info = " ".join(data[:-1])
     except:
-        await update.message.reply_text("❌ Ошибка формата. Используйте: `номер реквизит сумма`")
+        await update.message.reply_text("❌ **Ошибка формата.** Используйте: `номер реквизит сумма`")
         return ConversationHandler.END
         
     target_id = context.user_data['target_id']
@@ -491,7 +525,7 @@ async def approve_pay_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     pay_id = query.data.split("_")[2]
     context.user_data['approve_pay_id'] = pay_id
-    await query.edit_message_text("Введите номер, с которого был совершен платёж:")
+    await query.edit_message_text("📱 Введите номер, с которого был совершен платёж:")
     return APPROVE_PAYMENT_NUMBER
 
 async def approve_pay_finish(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -550,7 +584,7 @@ async def promote_mod_finish(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Действие отменено.")
+    await update.message.reply_text("❕ Действие отменено.")
     return ConversationHandler.END
 
 # Главная функция
