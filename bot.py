@@ -304,7 +304,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def add_req_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("💧 Введите реквизиты в формате: `номер-банк-фио` (например: `+79516768798-Альфа-Иван И.`)", parse_mode='Markdown')
+    await query.edit_message_text("💧 Введите реквизиты в формате: `номер-банк-ФИО полностью` (например: `+79516768798-Альфа-Иванов Иван Иванович`)", parse_mode='Markdown')
     return ADD_REQUISITE
 
 async def add_req_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
